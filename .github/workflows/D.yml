@@ -1,0 +1,45 @@
+# File: .github/workflows/rdp-tailscale.yml
+name: RDP with Tailscale
+on: [workflow_dispatch]
+
+jobs:
+  rdp-tailscale:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    
+    steps:
+    # Step 1: Install Tailscale
+    - name: Install Tailscale
+      run: |
+        $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+        $installer = "$env:TEMP\tailscale.msi"
+        Invoke-WebRequest -Uri $tsUrl -OutFile $installer
+        Start-Process msiexec.exe -ArgumentList "/i", "`"$installer`"", "/quiet" -Wait
+        Start-Sleep -Seconds 10
+    
+    # Step 2: Connect to Tailscale
+    - name: Connect Tailscale
+      env:
+        TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+      run: |
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_KEY --hostname=github-rdp
+        $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+        echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+    
+    # Step 3: Enable RDP
+    - name: Setup RDP
+      run: |
+        reg add "HKLM\System\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
+        netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+        Start-Service TermService
+    
+    # Step 4: Show connection info
+    - name: Display Info
+      run: |
+        echo "========================================"
+        echo "RDP READY VIA TAILSCALE"
+        echo "IP: $env:TAILSCALE_IP"
+        echo "Port: 3389"
+        echo "========================================"
+        echo "Connect with: mstsc /v:$env:TAILSCALE_IP"
+        echo "========================================"
